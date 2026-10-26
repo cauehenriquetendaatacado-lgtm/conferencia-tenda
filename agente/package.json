@@ -1,8 +1,0 @@
-{
-  "name": "agente-planilha",
-  "version": "1.0.0",
-  "private": true,
-  "main": "agente.js",
-  "scripts": { "start": "node agente.js" },
-  "dependencies": { "exceljs": "^4.4.0" }
-}
