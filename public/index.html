@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Conferência de Sobras e Faltas</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--tx:#1b1f24;--mut:#667085;--bd:#d0d5dd;--hd:#ffc000;--hdtx:#000;--fa:#ffe0e6;--so:#d9f2d0;--ac:#1a6b3c;--actx:#fff;--bad:#c0392b;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171a;--card:#1f2327;--tx:#eef0f2;--mut:#98a2b3;--bd:#3a4047;--fa:#5a2a35;--so:#27492a;--ac:#4cc17f;--actx:#08210f;--bad:#ff8a7a;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14171a;--card:#1f2327;--tx:#eef0f2;--mut:#98a2b3;--bd:#3a4047;--fa:#5a2a35;--so:#27492a;--ac:#4cc17f;--actx:#08210f;--bad:#ff8a7a;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:640px;margin:auto;padding:16px}
+h1{font-size:1.25rem;margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:16px}
+label{display:block;font-size:.85rem;color:var(--mut);margin:10px 0 4px}
+input{width:100%;padding:12px;font-size:1rem;border:1px solid var(--bd);border-radius:10px;background:var(--bg);color:var(--tx)}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.seg button{padding:12px;border-radius:10px;border:2px solid var(--bd);background:var(--bg);color:var(--tx);font-size:1rem;font-weight:600}
+.seg button.on.sobra{background:var(--so);border-color:var(--ac)}
+.seg button.on.falta{background:var(--fa);border-color:var(--bad)}
+.go{width:100%;margin-top:16px;padding:14px;border:0;border-radius:10px;background:var(--ac);color:var(--actx);font-size:1.05rem;font-weight:700}
+.msg{min-height:1.2em;margin-top:8px;font-size:.9rem;color:var(--mut)}
+.msg.err{color:var(--bad)}
+.bar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.bar button{padding:8px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--tx);font-weight:600}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:480px;font-size:.9rem;text-align:center}
+th,td{border:1px solid var(--bd);padding:7px 5px;font-weight:600}
+th{background:var(--hd);color:var(--hdtx)}
+th.f{background:var(--fa);color:var(--tx)}th.s{background:var(--so);color:var(--tx)}
+td button{border:0;background:none;color:var(--bad);font-size:1rem}
+.empty{color:var(--mut);text-align:center;padding:14px}
+</style>
+</head>
+<body>
+<h1>Conferência de Sobras e Faltas</h1>
+<div class="card">
+  <label for="dt">Data da conferência</label>
+  <input id="dt" type="date">
+  <label for="loja">Loja</label>
+  <input id="loja" placeholder="Ex.: CT09" autocapitalize="characters" autocomplete="off">
+  <label for="cod">Código do item</label>
+  <input id="cod" inputmode="numeric" placeholder="Ex.: 2399" autocomplete="off">
+  <label>É sobra ou falta?</label>
+  <div class="seg">
+    <button type="button" class="sobra" id="bs">Sobra</button>
+    <button type="button" class="falta" id="bf">Falta</button>
+  </div>
+  <label for="qtd">Quantidade (KG)</label>
+  <input id="qtd" inputmode="decimal" placeholder="Ex.: 0,5" autocomplete="off">
+  <button class="go" id="send">Enviar para a planilha</button>
+  <div class="msg" id="msg"></div>
+</div>
+
+<div class="bar"><strong id="count">Meus envios</strong></div>
+<div class="wrap">
+<table>
+  <thead><tr><th>DATA CONF.</th><th>LOJA</th><th>CÓDIGO</th><th class="f">Qtd de Faltas em KG</th><th class="s">Qtd de Sobras em KG</th><th></th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let tipo = null, rows = [], ids = [];
+
+const hoje = new Date();
+$('dt').value = hoje.getFullYear() + '-' + String(hoje.getMonth()+1).padStart(2,'0') + '-' + String(hoje.getDate()).padStart(2,'0');
+try { $('loja').value = localStorage.getItem('loja') || ''; } catch(e) {}
+try { ids = JSON.parse(localStorage.getItem('meus_ids') || '[]'); } catch(e) { ids = []; }
+
+const fmtData = iso => iso.split('-').reverse().join('/');
+const fmtNum = n => String(n).replace('.', ',');
+function setMsg(t, err){ $('msg').textContent = t; $('msg').className = 'msg' + (err ? ' err' : ''); }
+function salvarIds(){ try { localStorage.setItem('meus_ids', JSON.stringify(ids.slice(-300))); } catch(e){} }
+
+async function api(url, opt){
+  const r = await fetch(url, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opt));
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.erro || 'Erro ' + r.status);
+  return j;
+}
+
+function setTipo(t){
+  tipo = t;
+  $('bs').className = 'sobra' + (t === 'sobra' ? ' on sobra' : '');
+  $('bf').className = 'falta' + (t === 'falta' ? ' on falta' : '');
+}
+$('bs').onclick = () => setTipo('sobra');
+$('bf').onclick = () => setTipo('falta');
+
+function render(){
+  const tb = $('rows');
+  tb.textContent = '';
+  if (!rows.length){
+    const tr = document.createElement('tr'), td = document.createElement('td');
+    td.colSpan = 6; td.className = 'empty'; td.textContent = 'Nenhum envio neste aparelho ainda.';
+    tr.appendChild(td); tb.appendChild(tr);
+  }
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    [fmtData(r.data), r.loja, r.codigo, fmtNum(r.falta), fmtNum(r.sobra)].forEach(v => {
+      const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
+    });
+    const td = document.createElement('td'), b = document.createElement('button');
+    b.textContent = '✕'; b.title = 'Excluir';
+    b.onclick = () => remover(r);
+    td.appendChild(b); tr.appendChild(td); tb.appendChild(tr);
+  });
+  $('count').textContent = 'Meus envios (' + rows.length + ')';
+}
+
+async function carregar(){
+  if (!ids.length) return render();
+  try {
+    rows = await api('/api/meus', { method: 'POST', body: JSON.stringify({ ids }) });
+    ids = rows.map(r => r.id); salvarIds();
+  } catch(e){ setMsg('Não foi possível carregar seus envios.', true); }
+  render();
+}
+
+async function remover(r){
+  if (!confirm('Excluir este registro?')) return;
+  try {
+    await api('/api/registros/' + r.id, { method: 'DELETE' });
+    rows = rows.filter(x => x.id !== r.id); ids = ids.filter(i => i !== r.id); salvarIds(); render();
+  } catch(e){ setMsg('Erro ao excluir: ' + e.message, true); }
+}
+
+$('send').onclick = async () => {
+  const loja = $('loja').value.trim().toUpperCase();
+  const codigo = $('cod').value.trim();
+  const q = parseFloat($('qtd').value.replace(',', '.'));
+  if (!$('dt').value) return setMsg('Informe a data.', true);
+  if (!loja) return setMsg('Informe a loja.', true);
+  if (!codigo) return setMsg('Informe o código do item.', true);
+  if (!tipo) return setMsg('Escolha Sobra ou Falta.', true);
+  if (!(q > 0)) return setMsg('Informe uma quantidade válida maior que zero.', true);
+  $('send').disabled = true;
+  setMsg('Enviando…');
+  try {
+    const reg = await api('/api/registros', { method: 'POST', body: JSON.stringify({ data: $('dt').value, loja, codigo, tipo, qtd: q }) });
+    rows.push(reg); ids.push(reg.id); salvarIds(); render();
+    try { localStorage.setItem('loja', loja); } catch(e) {}
+    $('cod').value = ''; $('qtd').value = ''; setTipo(null);
+    setMsg('Enviado! Código ' + codigo + ' registrado.');
+    $('cod').focus();
+  } catch(e){ setMsg('Erro ao enviar: ' + e.message + '. Tente novamente.', true); }
+  $('send').disabled = false;
+};
+
+carregar();
+</script>
+</body>
+</html>
