@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: conferencia-sobras-faltas
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        sync: false   # cole a connection string do Neon
+      - key: ADMIN_PASSWORD
+        sync: false   # senha de acesso do PC da central
